@@ -243,14 +243,58 @@ class api_helper {
 
 		$options = options::get_display_options();
 
-		$args = array(
-			'post_id' => $post_id,
-			'order'   => $options['order'],
-			'status'  => 'approve',
-		);
-
-		return $args;
-
+        $args = array(
+        'post_id'  => $post_id,
+        'order'     => $options['order'],
+        'status'    => 'approve',
+        );
+						
+        /* Get Moderated Commenter Information from stored comment cookies */
+        $commenter = wp_get_current_commenter();
+        $comment_author_email = $commenter['comment_author_email']; //Previously escaped by sanitize_comment_cookies()
+        if( ! empty( $comment_author_email ) ) {
+            $args['include_unapproved'] = array( $comment_author_email );
+        }
+		
+        /* Decide whether to show moderated comments on the front-end */
+        /**
+        * Filter: epoch_show_unapproved
+        *
+        * Show unapproved (moderated) comments on the front-end for editors, admins, network admins
+        *
+        * @since 1.0.5
+        *
+        * @param bool  True allows display (default), false prevents display
+        */
+        $show_unapproved_admin = apply_filters( 'epoch_show_unapproved', true );
+		
+        /**
+        * Filter: epoch_show_unapproved_authors
+        *
+        * Show unapproved (moderated) comments on the front-end for post authors
+        *
+        * @since 1.0.5
+        *
+        * @param bool  True allows display (default), false prevents display
+        */
+        $show_unapproved_authors = apply_filters( 'epoch_show_unapproved_authors', true );
+		
+        if( current_user_can( 'edit_page', $post_id ) || current_user_can( 'edit_post', $post_id ) ) {
+            /* Catch all for authors, editors, admins, network admins */
+            if ( ( current_user_can( 'manage_network' ) || current_user_can( 'manage_options' ) || current_user_can( 'moderate_comments' ) ) ) {
+                /* editors, admins, network admins */
+                if( $show_unapproved_admin ) {
+                	$args[ 'status' ] = 'all';
+                }	
+            } else {
+                /* authors only */
+                if( $show_unapproved_authors ) {
+                	$args[ 'status' ] = 'all';
+                }
+            }
+        }
+		
+        return $args;
 	}
 
 	/**
@@ -381,7 +425,7 @@ class api_helper {
 		if ( is_a( $author_user, 'WP_User' ) ) {
 			$classes = array_merge( $classes, $author_user->roles );
 		}
-		
+
 		if ( 1 != $comment['comment_approved'] ) {
 			$classes[] = 'epoch-wrap-comment-awaiting-moderation';
 		}
@@ -393,6 +437,30 @@ class api_helper {
 		}
 
 		return implode( ' ', $classes );
+	}
+
+	/**
+	 * Given a post ID determine the number of comments
+	 *
+	 * @since  1.0.5
+	 * @param  int $post_id The post ID
+	 * @return int          The comment count
+	 */
+	public static function get_comment_count( $post_id ) {
+		$options = options::get_display_options();
+		$count   = 0;
+
+		$comments = get_approved_comments( $post_id );
+
+		foreach ( $comments as $comment ) {
+
+			if ( $comment->comment_type === '' || ( $comment->comment_type === 'pingback' && empty( $options['hide_pings'] ) ) ) {
+				$count++;
+			}
+
+		}
+
+		return (int) $count;
 	}
 
 	/**
